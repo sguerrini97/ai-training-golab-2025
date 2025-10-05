@@ -1,8 +1,34 @@
+// This example shows you how to use MongoDB and Ollama to create a proper vector
+// embedding database of the Ultimate Go Notebook. With this vector database,
+// you will be able to query for content that has a strong similarity to your
+// question.
+//
+// The book has already been pre-processed into chunks based on the books TOC.
+// For chunks over 500 words, those chunks have been chunked again into 250
+// blocks. The code will create a vector embedding for each chunk.
+// That data can be found under `zarf/data/book.chunks`.
+//
+// The original version of the book in text format has been retained. The program
+// to clean that document into chunks can be found under `cmd/cleaner`. You can
+// run that program using `make clean-data`. This is here if you want to play
+// with your own chunking. How you chunk the data is critical to accuracy.
+//
+// # Running the example:
+//
+//	$ make example06
+//
+// # This requires running the following command:
+//
+//	$ make compose-up // This starts MongoDB and OpenWebUI in docker compose.
+//  $ make ollama-up  // This starts the Ollama service.
+
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +38,9 @@ import (
 
 	"github.com/ardanlabs/ai-training/foundation/client"
 	"github.com/ardanlabs/ai-training/foundation/mongodb"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
@@ -154,4 +183,81 @@ func createBookEmbeddings(ctx context.Context) error {
 	fmt.Print("\n")
 
 	return nil
+}
+
+func insertBookEmbeddings(ctx context.Context, col *mongo.Collection) error {
+	input, err := os.Open("zarf/data/book.embeddings")
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer input.Close()
+
+	var counter int
+
+	fmt.Print("\n")
+	fmt.Print("\033[s")
+
+	// Read one document at a time (each line) and insert into mongodb.
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		counter++
+
+		// Pull the next document from the file.
+		doc := scanner.Text()
+
+		fmt.Print("\033[u\033[K")
+		fmt.Printf("Insering Data: %d", counter)
+
+		var d document
+		if err := json.Unmarshal([]byte(doc), &d); err != nil {
+			return fmt.Errorf("unmarshal: %w", err)
+		}
+
+		res := col.FindOne(ctx, bson.D{{Key: "id", Value: d.ID}})
+		if res.Err() == nil {
+			continue
+		}
+
+		if !errors.Is(res.Err(), mongo.ErrNoDocuments) {
+			return fmt.Errorf("find: %w", err)
+		}
+
+		if _, err := col.InsertOne(ctx, d); err != nil {
+			return fmt.Errorf("insert: %w", err)
+		}
+	}
+
+	fmt.Print("\n")
+
+	return nil
+}
+
+func initDB(ctx context.Context, client *mongo.Client) (*mongo.Collection, error) {
+	db := client.Database(dbName)
+
+	col, err := mongodb.CreateCollection(ctx, db, colName)
+	if err != nil {
+		return nil, fmt.Errorf("createCollection: %w", err)
+	}
+
+	const indexName = "vector_index"
+
+	settings := mongodb.VectorIndexSettings{
+		NumDimensions: dimensions,
+		Path:          "embedding",
+		Similarity:    "cosine",
+	}
+
+	if err := mongodb.CreateVectorIndex(ctx, col, indexName, settings); err != nil {
+		return nil, fmt.Errorf("createVectorIndex: %w", err)
+	}
+
+	unique := true
+	indexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "id", Value: 1}},
+		Options: &options.IndexOptions{Unique: &unique},
+	}
+	col.Indexes().CreateOne(ctx, indexModel)
+
+	return col, nil
 }
