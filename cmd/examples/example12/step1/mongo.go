@@ -15,7 +15,7 @@ import (
 const (
 	dbName     = "example12"
 	colName    = "trainingvideo"
-	dimensions = 768
+	dimensions = 1024
 )
 
 type document struct {
