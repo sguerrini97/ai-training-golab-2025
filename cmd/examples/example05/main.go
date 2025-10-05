@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
+
+	"github.com/ardanlabs/ai-training/foundation/client"
 )
 
 var (
@@ -70,6 +73,28 @@ func run() error {
 
 		Responses should be properly formatted to be easily read.
 	`
+
+	question := `Is there value in the book and why?`
+
+	fmt.Printf("\nContent:\n%s\n", fakeContent)
+	fmt.Printf("\nQuestion:\n\n%s\n", question)
+
+	finalPrompt := fmt.Sprintf(prompt, fakeContent, question)
+
+	// -------------------------------------------------------------------------
+
+	llm := client.NewLLM(url, model)
+
+	ch, err := llm.ChatCompletionsSSE(ctx, finalPrompt)
+	if err != nil {
+		return fmt.Errorf("chat completions: %w", err)
+	}
+
+	fmt.Print("\nModel Response:\n\n")
+
+	for resp := range ch {
+		fmt.Print(resp.Choices[0].Delta.Content)
+	}
 
 	return nil
 }
