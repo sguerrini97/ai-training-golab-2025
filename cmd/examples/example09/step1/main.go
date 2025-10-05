@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/ardanlabs/ai-training/foundation/client"
 )
 
 var (
@@ -46,6 +48,33 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("read image: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
+
+	const prompt = `
+		Describe the image and be concise and accurate keeping the description under 200 words.
+
+		Do not be overly verbose or stylistic.
+
+		Make sure all the elements in the image are enumerated and described.
+
+		At the end of the description, create a list of tags with the names of all the
+		elements in the image and do not output anything past this list.
+
+		Encode the list as valid JSON, as in this example:
+		["tag1","tag2","tag3",...]
+
+		Make sure the JSON is valid, doesn't have any extra spaces, and is
+		properly formatted.`
+
+	llm := client.NewLLM(url, model)
+
+	results, err := llm.ChatCompletions(ctx, prompt, client.WithImage(mimeType, image))
+	if err != nil {
+		return fmt.Errorf("chat completions: %w", err)
+	}
+
+	fmt.Printf("%s\n", results)
 
 	return nil
 }
