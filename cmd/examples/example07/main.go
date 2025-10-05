@@ -1,0 +1,148 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/ai-training/foundation/client"
+	"github.com/ardanlabs/ai-training/foundation/mongodb"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+)
+
+var (
+	urlChat    = "http://localhost:11434/v1/chat/completions"
+	urlEmbed   = "http://localhost:11434/v1/embeddings"
+	modelChat  = "qwen2.5vl:latest"
+	modelEmbed = "bge-m3:latest"
+
+	dbName  = "example06"
+	colName = "book"
+)
+
+func init() {
+	if v := os.Getenv("LLM_CHAT_SERVER"); v != "" {
+		urlChat = v
+	}
+
+	if v := os.Getenv("LLM_EMBED_SERVER"); v != "" {
+		urlEmbed = v
+	}
+
+	if v := os.Getenv("LLM_CHAT_MODEL"); v != "" {
+		modelChat = v
+	}
+
+	if v := os.Getenv("LLM_EMBED_MODEL"); v != "" {
+		modelEmbed = v
+	}
+}
+
+// =============================================================================
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	defer cancel()
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("\nAsk Bill a question about Go: ")
+
+	question, _ := reader.ReadString('\n')
+	if question == "" {
+		return nil
+	}
+
+	fmt.Print("\n")
+
+	results, err := vectorSearch(ctx, question)
+	if err != nil {
+		return fmt.Errorf("vectorSearch: %w", err)
+	}
+
+	return nil
+}
+
+type searchResult struct {
+	ID        int       `bson:"id"`
+	Text      string    `bson:"text"`
+	Embedding []float64 `bson:"embedding"`
+	Score     float64   `bson:"score"`
+}
+
+func vectorSearch(ctx context.Context, question string) ([]searchResult, error) {
+	llm := client.NewLLM(urlEmbed, modelEmbed)
+
+	vector, err := llm.EmbedText(ctx, question)
+	if err != nil {
+		return nil, fmt.Errorf("do: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	client, err := mongodb.Connect(ctx, "mongodb://localhost:27017", "ardan", "ardan")
+	if err != nil {
+		return nil, fmt.Errorf("mongodb.Connect: %w", err)
+	}
+
+	col := client.Database(dbName).Collection(colName)
+
+	// -------------------------------------------------------------------------
+
+	const limitResults = 2
+
+	results, err := vectorDBSearch(ctx, col, vector, limitResults)
+	if err != nil {
+		return nil, fmt.Errorf("vectorDBSearch: %w", err)
+	}
+
+	return results, nil
+}
+
+func vectorDBSearch(ctx context.Context, col *mongo.Collection, vector []float64, limit int) ([]searchResult, error) {
+	pipeline := mongo.Pipeline{
+		{{
+			Key: "$vectorSearch",
+			Value: bson.M{
+				"index":       "vector_index",
+				"exact":       true,
+				"path":        "embedding",
+				"queryVector": vector,
+				"limit":       limit,
+			}},
+		},
+		{{
+			Key: "$project",
+			Value: bson.M{
+				"id":        1,
+				"text":      1,
+				"embedding": 1,
+				"score": bson.M{
+					"$meta": "vectorSearchScore",
+				},
+			}},
+		},
+	}
+
+	cur, err := col.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate: %w", err)
+	}
+	defer cur.Close(ctx)
+
+	var results []searchResult
+	if err := cur.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("all: %w", err)
+	}
+
+	return results, nil
+}
