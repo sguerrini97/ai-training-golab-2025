@@ -45,4 +45,27 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
+
+	// Display the data points.
+	fmt.Print("\n")
+	for _, v := range dataPoints {
+		fmt.Printf("Vector: Name(%s) len(%d) %v\n", v.(data).Name, len(v.(data).Vector()), v.(data).Vector())
+	}
+	fmt.Print("\n")
+
+	// Compare each data point to every other by performing a cosine
+	// similarity comparison. This requires converting each data point
+	// into a vector.
+	for _, target := range dataPoints {
+		results := vector.Similarity(target, dataPoints...)
+
+		for _, result := range results {
+			fmt.Printf("%s -> %s: %.2f%% similar\n",
+				result.Target.(data).Name,
+				result.DataPoint.(data).Name,
+				result.Percentage)
+		}
+		fmt.Print("\n")
+	}
+
 }
