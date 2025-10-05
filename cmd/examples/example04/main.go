@@ -66,6 +66,15 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 
+	fmt.Println("Inserting Documents")
+
+	if err := insertDocuments(ctx, col); err != nil {
+		return fmt.Errorf("insertDocuments: %w", err)
+	}
+
+	// We need to give Mongo a little time to index the documents.
+	time.Sleep(time.Second)
+
 	return nil
 }
 
@@ -101,4 +110,27 @@ func initDB(ctx context.Context, client *mongo.Client) (*mongo.Collection, error
 	col.DeleteOne(ctx, bson.D{{Key: "id", Value: 2}})
 
 	return col, nil
+}
+
+func insertDocuments(ctx context.Context, col *mongo.Collection) error {
+	d1 := document{
+		ID:        1,
+		Text:      "this is text 1",
+		Embedding: []float64{1.0, 2.0, 3.0, 4.0},
+	}
+
+	d2 := document{
+		ID:        2,
+		Text:      "this is text 2",
+		Embedding: []float64{1.5, 2.5, 3.5, 4.5},
+	}
+
+	res, err := col.InsertMany(ctx, []any{d1, d2})
+	if err != nil {
+		return fmt.Errorf("insert: %w", err)
+	}
+
+	fmt.Printf("%v\n", res.InsertedIDs)
+
+	return nil
 }
