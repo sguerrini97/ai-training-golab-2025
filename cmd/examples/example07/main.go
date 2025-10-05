@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/ai-training/foundation/client"
@@ -67,6 +68,10 @@ func run() error {
 	results, err := vectorSearch(ctx, question)
 	if err != nil {
 		return fmt.Errorf("vectorSearch: %w", err)
+	}
+
+	if err := questionResponse(ctx, question, results); err != nil {
+		return fmt.Errorf("questionResponse: %w", err)
 	}
 
 	return nil
@@ -145,4 +150,60 @@ func vectorDBSearch(ctx context.Context, col *mongo.Collection, vector []float64
 	}
 
 	return results, nil
+}
+
+func questionResponse(ctx context.Context, question string, results []searchResult) error {
+	const prompt = `Use the following pieces of information to answer the user's question.	
+	
+	If you don't know the answer, say that you don't know.	
+	
+	Answer the question and provide additional helpful information.
+	
+	Responses should be properly formatted to be easily read.	
+	
+	Context:
+	%s	
+	
+	Question:
+	%s
+`
+
+	var chunks strings.Builder
+
+	for _, res := range results {
+		if res.Score >= .70 {
+			chunks.WriteString(res.Text)
+			chunks.WriteString(".\n")
+
+			// YOU WILL WANT TO KNOW HOW MANY TOKENS ARE CURRENTLY IN THE CHUNK
+			// SO YOU DON'T EXCEED THE CONTEXT WINDOW (MAXIMUM TOKENS ALLOWED BY
+			// THE MODEL). OUR CURRENT MODEL SUPPORTS 8192 TOKENS. THERE IS A
+			// TIKTOKEN PACKAGE IN FOUNDATION TO HELP YOU WITH THIS.
+		}
+	}
+
+	content := chunks.String()
+	if content == "" {
+		fmt.Println("Don't have enough information to provide an answer")
+		return nil
+	}
+
+	finalPrompt := fmt.Sprintf(prompt, content, question)
+
+	// -------------------------------------------------------------------------
+
+	llm := client.NewLLM(urlChat, modelChat)
+
+	ch, err := llm.ChatCompletionsSSE(ctx, finalPrompt)
+	if err != nil {
+		return fmt.Errorf("do: %w", err)
+	}
+
+	fmt.Print("Model Response:\n\n")
+
+	for resp := range ch {
+		fmt.Print(resp.Choices[0].Delta.Content)
+	}
+
+	return nil
 }
