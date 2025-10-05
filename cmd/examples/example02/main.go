@@ -94,7 +94,7 @@ func run() error {
 	}
 
 	fmt.Print("\n")
-	
+
 	// -------------------------------------------------------------------------
 
 	// Perform the same vector math as in example2 using the LLM vector embedding.
