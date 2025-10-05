@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -43,13 +44,14 @@ func main() {
 }
 
 func run(host string, port string) error {
-
 	// -------------------------------------------------------------------------
 	// Start a MCP Server and listen for requests.
 
 	go func() {
 		mcpListenAndServe(host, port)
 	}()
+
+	time.Sleep(5 * time.Second)
 
 	fmt.Println("\nTesting MCP Client coded against the MCP Server")
 
