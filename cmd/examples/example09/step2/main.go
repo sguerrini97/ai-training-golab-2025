@@ -100,5 +100,21 @@ func run() error {
 
 	fmt.Printf("%s\n", results)
 
+	// -------------------------------------------------------------------------
+
+	fmt.Println("\nGenerating embeddings for the image description:")
+
+	embedLLM := client.NewLLM(urlEmbed, modelEmbed)
+
+	vector, err := embedLLM.EmbedText(ctx, results)
+	if err != nil {
+		return fmt.Errorf("llm.EmbedText: %w", err)
+	}
+
+	fmt.Printf("%v...%v\n", vector[0:3], vector[len(vector)-3:])
+
+	// -------------------------------------------------------------------------
+
+	fmt.Println("\nDONE")
 	return nil
 }
