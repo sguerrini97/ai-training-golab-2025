@@ -75,6 +75,17 @@ func run() error {
 	// We need to give Mongo a little time to index the documents.
 	time.Sleep(time.Second)
 
+	// -------------------------------------------------------------------------
+
+	fmt.Print("\n---- VECTOR SEARCH ----\n\n")
+
+	results, err := vectorSearch(ctx, col, []float64{1.2, 2.2, 3.2, 4.2}, 10)
+	if err != nil {
+		return fmt.Errorf("storeDocuments: %w", err)
+	}
+
+	fmt.Printf("%#v\n", results)
+
 	return nil
 }
 
@@ -133,4 +144,43 @@ func insertDocuments(ctx context.Context, col *mongo.Collection) error {
 	fmt.Printf("%v\n", res.InsertedIDs)
 
 	return nil
+}
+
+func vectorSearch(ctx context.Context, col *mongo.Collection, vector []float64, limit int) ([]searchResult, error) {
+	pipeline := mongo.Pipeline{
+		{{
+			Key: "$vectorSearch",
+			Value: bson.M{
+				"index":       "vector_index",
+				"exact":       true,
+				"path":        "embedding",
+				"queryVector": vector,
+				"limit":       limit,
+			}},
+		},
+		{{
+			Key: "$project",
+			Value: bson.M{
+				"id":        1,
+				"text":      1,
+				"embedding": 1,
+				"score": bson.M{
+					"$meta": "vectorSearchScore",
+				},
+			}},
+		},
+	}
+
+	cur, err := col.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate: %w", err)
+	}
+	defer cur.Close(ctx)
+
+	var results []searchResult
+	if err := cur.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("all: %w", err)
+	}
+
+	return results, nil
 }
