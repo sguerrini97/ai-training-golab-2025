@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/ai-training/foundation/client"
@@ -88,6 +89,27 @@ func run() error {
 		}
 		fmt.Print("\n")
 	}
+
+	// -------------------------------------------------------------------------
+
+	var builder strings.Builder
+	for i, m := range data {
+		builder.WriteString(fmt.Sprintf("RESULT: %d\n", i+1))
+		for k, v := range m {
+			builder.WriteString(fmt.Sprintf("KEY: %s, VAL: %v\n", k, v))
+		}
+		builder.WriteString("\n")
+	}
+
+	answer, err := llm.ChatCompletions(ctx, fmt.Sprintf(response, builder.String(), question))
+	if err != nil {
+		return fmt.Errorf("do: %w", err)
+	}
+
+	fmt.Println("ANSWER:")
+	fmt.Print("-----------------------------------------------\n\n")
+	fmt.Println(answer)
+	fmt.Print("\n")
 
 	return nil
 }
